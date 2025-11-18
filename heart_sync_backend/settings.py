@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Third party apps
     "rest_framework",
+    "channels",
     # My apps
     "rooms"
 ]
@@ -72,6 +73,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "heart_sync_backend.wsgi.application"
+ASGI_APPLICATION = "heart_sync_backend.asgi.application"
 
 
 # Database
@@ -123,5 +125,11 @@ STATIC_URL = "static/"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer"
+    }
+}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
