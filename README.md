@@ -2,9 +2,9 @@
 
 # Heart Sync Backend Architecture
 
-## 📊 현재 프로젝트 상태 (2025-11-05)
+## 📊 현재 프로젝트 상태 (2025-11-25)
 
-### ✅ **Phase 1 완료!** 🎉
+### ✅ **Phase 1 & Phase 2 완료!** 🎉
 
 #### 1. Models (데이터베이스 설계) ✅
 - **Room 모델**: 게임 방 관리 (room_id, room_code 자동 생성)
@@ -37,19 +37,23 @@
 - **마이그레이션**: 데이터베이스 스키마 생성 완료
 - **Postman 테스트**: 전체 API 엔드포인트 검증 완료
 
-### 🚀 **다음 작업: Phase 2 시작!**
+#### 6. WebSocket 실시간 통신 ✅ **NEW!**
+- **Django Channels 설치**: channels==4.3.1
+- **Daphne ASGI 서버**: daphne==4.2.1
+- **GameConsumer**: 방별 그룹 관리 및 심박수 브로드캐스트
+- **WebSocket 라우팅**: `ws://localhost:8000/ws/game/{room_id}/`
+- **채널 레이어**: InMemoryChannelLayer (개발용)
+- **실시간 데이터 전송**: 플레이어 심박수 실시간 공유
 
-**Phase 2: WebSocket 실시간 통신**
-- Django Channels 설치 및 설정
-- GameConsumer 구현
-- 심박수 실시간 브로드캐스트
+### 🚀 **다음 작업: Phase 3 시작!**
 
 **Phase 3: 최적화 및 배포 준비**
 - 코드 최적화
 - 에러 핸들링 강화
+- Redis 채널 레이어 적용 (배포용)
 - 안드로이드 앱 연동
 
-### 📈 **진행률: Phase 1 - 100% 완료** ✅ → **Phase 2 시작 준비!**
+### 📈 **진행률: Phase 1 - 100% 완료** ✅ | **Phase 2 - 100% 완료** ✅ → **Phase 3 시작 준비!**
 
 ---
 
@@ -97,6 +101,8 @@ pip install -r requirements.txt
 **설치되는 패키지:**
 - Django 5.1
 - Django REST Framework 3.15
+- Django Channels 4.3.1 (WebSocket 지원)
+- Daphne 4.2.1 (ASGI 서버)
 - 기타 필요한 라이브러리들
 
 ### 4️⃣ 데이터베이스 마이그레이션
@@ -257,16 +263,18 @@ heartsync\Scripts\activate
 applepulser-api/
 │
 ├── heart_sync_backend/      # Django 프로젝트 설정 폴더
-│   ├── settings.py          # Django 설정 파일
+│   ├── settings.py          # Django 설정 파일 (Channels, ASGI 설정 포함)
 │   ├── urls.py              # 메인 URL 라우팅
-│   ├── asgi.py              # WebSocket용 (Phase 2)
-│   └── wsgi.py              # HTTP 서버용
+│   ├── asgi.py              # ASGI 설정 (HTTP + WebSocket)
+│   └── wsgi.py              # WSGI 설정 (배포용)
 │
 ├── rooms/                   # 게임 방 관리 앱
 │   ├── models.py            # Room, Player 모델
 │   ├── serializers.py       # 데이터 직렬화
 │   ├── views.py             # REST API 뷰
 │   ├── urls.py              # API 엔드포인트 라우팅
+│   ├── routing.py           # WebSocket URL 패턴
+│   ├── consumers.py         # GameConsumer (WebSocket 처리)
 │   ├── admin.py             # Admin 페이지 설정
 │   └── tests.py             # 테스트 코드
 │
@@ -559,12 +567,37 @@ Django Admin을 통한 관리자 페이지 구현
 
 ---
 
-## WebSocket 실시간 통신 (Phase 2 예정)
+## WebSocket 실시간 통신 ✅
 
-> **Phase 2에서 구현 예정**
-> - Django Channels를 사용한 WebSocket 서버
-> - 실시간 심박수 데이터 브로드캐스트
-> - 게임 이벤트 실시간 동기화
+### 연결 정보
+**WebSocket URL:** `ws://localhost:8000/ws/game/{room_id}/`
+
+### 메시지 형식
+
+#### 클라이언트 → 서버 (심박수 전송)
+```json
+{
+  "type": "heart_rate",
+  "player_id": "uuid-xxx",
+  "bpm": 85
+}
+```
+
+#### 서버 → 클라이언트 (브로드캐스트)
+```json
+{
+  "type": "heart_rate",
+  "player_id": "uuid-xxx",
+  "bpm": 85
+}
+```
+
+### WebSocket 연결 끊김 대비
+
+안드로이드 앱에서 WebSocket 연결 끊김에 대비한 콜백 로직 구현 필요:
+- 연결 끊김 감지 및 자동 재연결
+- 재연결 실패 시 사용자 알림
+- 하트비트(Ping/Pong)로 연결 상태 확인
 
 ---
 
@@ -600,19 +633,18 @@ Django Admin을 통한 관리자 페이지 구현
 
 ## 기술 스택
 
-### ✅ 현재 사용 중 (Phase 1)
+### ✅ 현재 사용 중
 - **Django 5.1**: 웹 프레임워크
 - **Django REST Framework 3.15**: REST API 구현
-- **SQLite**: 데이터베이스 (개발용)
-- **Postman**: API 테스트
-
-### 🔜 Phase 2 예정
-- **Django Channels**: WebSocket 실시간 통신
-- **Redis** (선택): 채널 레이어 (배포 시)
+- **Django Channels 4.3.1**: WebSocket 실시간 통신
+- **Daphne 4.2.1**: ASGI 서버
+- **SQLite**: 데이터베이스 (로컬 개발용)
+- **InMemoryChannelLayer**: 채널 레이어 (로컬 개발용)
 
 ### 🛠️ 개발 도구
 - **Git**: 버전 관리
 - **Python 3.13**: 프로그래밍 언어
+- **Postman**: API 테스트
 
 ---
 
@@ -642,15 +674,16 @@ Django Admin을 통한 관리자 페이지 구현
 
 **🎉 Phase 1 완료! 모든 REST API 정상 동작 확인!**
 
-### Phase 2: WebSocket 실시간 통신
-- [ ] Django Channels 설치 및 설정
-- [ ] ASGI 설정 (asgi.py)
-- [ ] GameConsumer 구현
-  - [ ] WebSocket 연결/해제
-  - [ ] 심박수 데이터 수신
-  - [ ] 실시간 브로드캐스트
-- [ ] 채널 레이어 설정 (Redis 선택)
-- [ ] WebSocket 테스트
+### Phase 2: WebSocket 실시간 통신 ✅ **완료!**
+- [x] Django Channels 설치 및 설정
+- [x] ASGI 설정 (asgi.py)
+- [x] GameConsumer 구현
+  - [x] WebSocket 연결/해제
+  - [x] 심박수 데이터 수신
+  - [x] 실시간 브로드캐스트
+- [x] 채널 레이어 설정 (InMemoryChannelLayer)
+- [x] WebSocket 라우팅 (routing.py)
+- [x] WebSocket 테스트 완료
 
 ### Phase 3: 최적화 및 배포 준비
 - [ ] 코드 리팩토링
