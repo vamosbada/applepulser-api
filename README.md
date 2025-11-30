@@ -183,10 +183,11 @@ GET http://127.0.0.1:8000/api/rooms/{room_id}/
 
 ### **방 참가 (POST)**
 ```bash
-POST http://127.0.0.1:8000/api/rooms/{room_id}/join/
+POST http://127.0.0.1:8000/api/rooms/join/
 Content-Type: application/json
 
 {
+  "room_code": "123456",
   "nickname": "플레이어1"
 }
 ```
@@ -305,9 +306,9 @@ class Room(models.Model):
     max_players = IntegerField(default=4)                 # 최대 4명
     created_at = DateTimeField(auto_now_add=True)         # 방 생성 시간 자동
 
-    # 게임 설정 (방 생성 시 필수 입력)
-    mode = CharField(max_length=20)                       # steady_beat/pulse_rush (TextChoices)
-    time_limit_seconds = IntegerField(default=120)        # 게임 시간 (기본 2분)
+    # 게임 설정
+    mode = CharField(max_length=20, default='steady_beat') # steady_beat/pulse_rush (TextChoices, 기본값: steady_beat)
+    time_limit_seconds = IntegerField(default=120)         # 게임 시간 (기본 2분)
 
     # BPM 설정 (선택 사항)
     bpm_min = IntegerField(null=True, blank=True)         # 최소 심박수
@@ -412,6 +413,7 @@ fields: ['room_id', 'room_code', 'status', 'max_players', 'players', 'created_at
 #### 4. 액션 Serializers
 ```python
 # JoinRoomSerializer - 방 참가
+- room_code: 6자리 방 코드 (QR코드에서 읽음)
 - nickname: 2-10자 닉네임
 
 # LeaveRoomSerializer - 방 퇴장
@@ -467,16 +469,17 @@ GET /api/rooms/{room_id}/
 
 #### 3. JoinRoomView
 ```python
-POST /api/rooms/{room_id}/join/
-Body: {"nickname": "플레이어1"}
+POST /api/rooms/join/
+Body: {"room_code": "123456", "nickname": "플레이어1"}
 
 기능:
-- 닉네임 검증 (2-10자)
+- room_code와 닉네임 검증 (2-10자)
+- room_code로 방 찾기 (QR코드 지원)
 - 방 상태 확인 (WAITING만 입장 가능)
 - 인원 제한 확인 (max_players)
 - Player 생성 (status=WAITING, is_host=False)
 
-응답: 200 OK (생성된 플레이어 정보)
+응답: 200 OK (방 전체 정보 + 모든 플레이어 리스트)
 ```
 
 #### 4. LeaveRoomView
@@ -574,8 +577,16 @@ Django Admin을 통한 관리자 페이지 구현
 
 ### 메시지 형식
 
-#### 클라이언트 → 서버 (심박수 전송)
+#### 1. 심박수 전송
 ```json
+// 클라이언트 → 서버
+{
+  "type": "heart_rate",
+  "player_id": "uuid-xxx",
+  "bpm": 85
+}
+
+// 서버 → 모든 클라이언트 (브로드캐스트)
 {
   "type": "heart_rate",
   "player_id": "uuid-xxx",
@@ -583,21 +594,47 @@ Django Admin을 통한 관리자 페이지 구현
 }
 ```
 
-#### 서버 → 클라이언트 (브로드캐스트)
+#### 2. Ping/Pong (연결 유지 확인)
 ```json
+// 클라이언트 → 서버 (5초마다)
 {
-  "type": "heart_rate",
-  "player_id": "uuid-xxx",
-  "bpm": 85
+  "type": "ping"
+}
+
+// 서버 → 클라이언트
+{
+  "type": "pong"
 }
 ```
 
-### WebSocket 연결 끊김 대비
+#### 3. 플레이어 연결 끊김 알림
+```json
+// 서버 → 모든 클라이언트 (연결 끊김 감지 시)
+{
+  "type": "player_disconnected",
+  "player_id": "uuid-xxx",
+  "nickname": "철수"
+}
+```
 
-안드로이드 앱에서 WebSocket 연결 끊김에 대비한 콜백 로직 구현 필요:
-- 연결 끊김 감지 및 자동 재연결
-- 재연결 실패 시 사용자 알림
-- 하트비트(Ping/Pong)로 연결 상태 확인
+### WebSocket 연결 관리
+
+#### 서버 측 (구현 완료) ✅
+- **Ping/Pong 처리**: Ping 메시지 수신 시 즉시 Pong 응답
+- **연결 끊김 감지**: 5초마다 체크, 15초 동안 ping 없으면 타임아웃
+- **자동 탈락 처리**:
+  - PLAYING 상태일 때만 연결 끊김 감지
+  - 타임아웃 시 Player 상태를 FINISHED로 변경
+  - 모든 플레이어에게 `player_disconnected` 메시지 브로드캐스트
+- **연결 해제**: 그룹에서 자동 제거 및 WebSocket 종료
+
+#### 클라이언트 측 (안드로이드 앱에서 구현 필요)
+- **5초마다 Ping 전송**: 서버 연결 유지 확인
+- **Pong 응답 확인**: 서버가 정상 동작 중인지 체크
+- **타이머 리셋**: Pong 받을 때마다 타이머 초기화
+- **재연결 로직**: Exponential Backoff 방식 권장 (2초, 4초, 8초, 16초...)
+- **연결 상태 UI**: 연결됨/끊김/재연결 중 상태 표시
+- **연결 끊김 알림 처리**: `player_disconnected` 메시지 수신 시 해당 플레이어를 해골(💀) 또는 탈락 상태로 표시
 
 ---
 
@@ -681,6 +718,10 @@ Django Admin을 통한 관리자 페이지 구현
   - [x] WebSocket 연결/해제
   - [x] 심박수 데이터 수신
   - [x] 실시간 브로드캐스트
+  - [x] Ping/Pong 연결 유지 메커니즘
+  - [x] 연결 끊김 감지 (5초 체크, 15초 타임아웃)
+  - [x] 자동 탈락 처리 (FINISHED 상태 변경)
+  - [x] player_disconnected 브로드캐스트
 - [x] 채널 레이어 설정 (InMemoryChannelLayer)
 - [x] WebSocket 라우팅 (routing.py)
 - [x] WebSocket 테스트 완료
